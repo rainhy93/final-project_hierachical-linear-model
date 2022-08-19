@@ -1,0 +1,765 @@
+---
+title: "final project"
+author: "Yu Huang"
+date: "4/26/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## install and load libraries
+
+```{r}
+library(lme4)
+library(lmerTest)
+library(texreg)
+library(optimx)
+library(lattice)
+library(readr)
+library(tidyverse)
+library(ggplot2)
+library(ellipse)
+library(nlme)
+library(ggpubr)
+library(knitr)
+library(corrplot)
+#install.packages("HLMdiag")
+library(HLMdiag)
+#install.packages("apaTables")
+library(apaTables)
+```
+
+## processing data
+
+```{r}
+source("all_functions.r")
+nyls_data = read_table("r_nyls_data.txt")
+# for modeling purposes, remove persons with not enough observations(i.e., < 4 time points)
+id_to_del = nyls_data %>%
+  count(id) %>%
+  filter(n<4) %>%
+  select(id)
+nyls_data2 = nyls_data %>%
+  filter(!id %in% id_to_del$id)
+# add integer id called "index"
+nyls_data2 = nyls_data2 %>%
+  group_by(id) %>%
+  mutate(index = cur_group_id())
+```
+
+## descriptive statistics
+```{r}
+summary(nyls_data2)
+# summary stats by age
+nyls_data2 %>% group_by(age) %>% summarise(M = mean(youth_dev), SD = sd(youth_dev))
+apa.1way.table(iv = age, dv = youth_dev, data = nyls_data2, filename = "descriptive stats across age .doc", table.number = 1)
+par(mfrow = c(1,3))
+hist(x = nyls_data2$youth_dev, col = 2, 
+     main = "Histogram of kids' attitude scores",
+     xlab = "attitude score")  #left-skewed
+hist(x = nyls_data2$age, col = 3,
+     main = "Histogram of kids' age",
+     xlab = "age")     #right-skewed
+hist(x = nyls_data2$parent_att, col = 4,
+     main = "Histogram of parents' attitude scores", xlab = "attitude score")      #left-skewed; mostly above 25
+par(mfrow = c(1,2))
+barplot(table(nyls_data2$gender), col = c("blue", "red"), 
+        xlab = "gender", names.arg = c("male", "female"),
+        main = "Gender distribution")     #slightly more male kids
+barplot(table(nyls_data2$cohort), col = palette.colors(n = 7, "ggplot2"),
+        xlab = "cohort", main = "Cohort distribution")    #cohort 7 has smallest number of people
+```
+
+### exploratory data analysis
+## effects of cohort
+# individual data
+```{r}
+# split data into 7 datasets by cohort
+cohort1 = nyls_data2 %>% filter(cohort == 1)
+cohort2 = nyls_data2 %>% filter(cohort == 2)
+cohort3 = nyls_data2 %>% filter(cohort == 3)
+cohort4 = nyls_data2 %>% filter(cohort == 4)
+cohort5 = nyls_data2 %>% filter(cohort == 5)
+cohort6 = nyls_data2 %>% filter(cohort == 6)
+cohort7 = nyls_data2 %>% filter(cohort == 7)
+#sample 50 individuals from each cohort for visualizations
+cohort1_sample = cohort1 %>% filter(id %in% sample(unique(cohort1$id), size = 50, replace=FALSE))
+cohort2_sample = cohort2 %>% filter(id %in% sample(unique(cohort2$id), size = 50, replace = FALSE))
+cohort3_sample = cohort3 %>% filter(id %in% sample(unique(cohort3$id), size = 50, replace = FALSE))
+cohort4_sample = cohort4 %>% filter(id %in% sample(unique(cohort4$id), size = 50, replace = FALSE))
+cohort5_sample = cohort5 %>% filter(id %in% sample(unique(cohort5$id), size = 50, replace = FALSE))
+cohort6_sample = cohort6 %>% filter(id %in% sample(unique(cohort6$id), size = 50, replace = FALSE))
+cohort7_sample = cohort7 %>% filter(id %in% sample(unique(cohort7$id), size = 50, replace = FALSE))
+
+# Cohort 1
+# panel plot with join
+par(mfrow = c(1,1))
+xyplot(youth_dev ~ age | as.factor(id), data = cohort1_sample,
+col.line = "blue", type = c("p","l"),
+main = "Plots of Kid's Score by Age (Cohort 1): Join Points")
+# panel plot with linear regression
+xyplot(youth_dev ~ age | as.factor(id), data = cohort1_sample,
+col.line = "red", type = c("p","r"),
+main = "Plots of Kids's Score by Age (Cohort 1): Linear Regression ")
+# panel plot with spline
+xyplot(youth_dev ~ age | as.factor(id), data = cohort1_sample,
+col.line = "red", type = c("p","spline"),
+main = "Plots of Kids's Score by Age (Cohort 1): Spline")
+# score generally decreases with age; nonlinear trend
+
+# Cohort 2
+# panel plot with join
+xyplot(youth_dev ~ age | as.factor(id), data = cohort2_sample,
+col.line = "blue", type = c("p","l"),
+main = "Plots of Kid's Score by Age (Cohort 2): Join Points")
+# panel plot with linear regression
+xyplot(youth_dev ~ age | as.factor(id), data = cohort2_sample,
+col.line = "red", type = c("p","r"),
+main = "Plots of Kids's Score by Age (Cohort 2): Linear Regression ")
+# panel plot with spline
+xyplot(youth_dev ~ age | as.factor(id), data = cohort2_sample,
+col.line = "red", type = c("p","spline"),
+main = "Plots of Kids's Score by Age (Cohort 2): Spline")
+# more variability in trend 
+
+# Cohort 3
+# panel plot with join
+xyplot(youth_dev ~ age | as.factor(id), data = cohort3_sample,
+col.line = "blue", type = c("p","l"),
+main = "Plots of Kid's Score by Age (Cohort 3): Join Points")
+# panel plot with linear regression
+xyplot(youth_dev ~ age | as.factor(id), data = cohort3_sample,
+col.line = "red", type = c("p","r"),
+main = "Plots of Kids's Score by Age (Cohort 3): Linear Regression ")
+# panel plot with spline
+xyplot(youth_dev ~ age | as.factor(id), data = cohort3_sample,
+col.line = "red", type = c("p","spline"),
+main = "Plots of Kids's Score by Age (Cohort 3): Spline")
+# score generally decreases with age; nonlinear trend 
+
+# Cohort 4
+# panel plot with join
+xyplot(youth_dev ~ age | as.factor(id), data = cohort4_sample,
+col.line = "blue", type = c("p","l"),
+main = "Plots of Kid's Score by Age (Cohort 4): Join Points")
+# panel plot with linear regression
+xyplot(youth_dev ~ age | as.factor(id), data = cohort4_sample,
+col.line = "red", type = c("p","r"),
+main = "Plots of Kids's Score by Age (Cohort 4): Linear Regression ")
+# panel plot with spline
+xyplot(youth_dev ~ age | as.factor(id), data = cohort4_sample,
+col.line = "red", type = c("p","spline"),
+main = "Plots of Kids's Score by Age (Cohort 4): Spline")
+# a lot of variability in trend
+
+# Cohort 5
+# panel plot with join
+xyplot(youth_dev ~ age | as.factor(id), data = cohort5_sample,
+col.line = "blue", type = c("p","l"),
+main = "Plots of Kid's Score by Age (Cohort 5): Join Points")
+# panel plot with linear regression
+xyplot(youth_dev ~ age | as.factor(id), data = cohort5_sample,
+col.line = "red", type = c("p","r"),
+main = "Plots of Kids's Score by Age (Cohort 5): Linear Regression ")
+# panel plot with spline
+xyplot(youth_dev ~ age | as.factor(id), data = cohort5_sample,
+col.line = "red", type = c("p","spline"),
+main = "Plots of Kids's Score by Age (Cohort 5): Spline")
+# a lot of variability in trend
+
+# Cohort 6
+# panel plot with join
+xyplot(youth_dev ~ age | as.factor(id), data = cohort6_sample,
+col.line = "blue", type = c("p","l"),
+main = "Plots of Kid's Score by Age (Cohort 6): Join Points")
+# panel plot with linear regression
+xyplot(youth_dev ~ age | as.factor(id), data = cohort6_sample,
+col.line = "red", type = c("p","r"),
+main = "Plots of Kids's Score by Age (Cohort 6): Linear Regression ")
+# panel plot with spline
+xyplot(youth_dev ~ age | as.factor(id), data = cohort6_sample,
+col.line = "red", type = c("p","spline"),
+main = "Plots of Kids's Score by Age (Cohort 6): Spline")
+# a lot of variability in trend
+
+# Cohort 7
+# panel plot with join
+xyplot(youth_dev ~ age | as.factor(id), data = cohort7_sample,
+col.line = "blue", type = c("p","l"),
+main = "Plots of Kid's Score by Age (Cohort 7): Join Points")
+# panel plot with linear regression
+xyplot(youth_dev ~ age | as.factor(id), data = cohort7_sample,
+col.line = "red", type = c("p","r"),
+main = "Plots of Kids's Score by Age (Cohort 7): Linear Regression ")
+# panel plot with spline
+xyplot(youth_dev ~ age | as.factor(id), data = cohort7_sample,
+col.line = "red", type = c("p","spline"),
+main = "Plots of Kids's Score by Age (Cohort 7): Spline")
+# a lot of variability in trend
+
+# Join points by subject
+par(mfrow=c(1,1))
+join_by_sub = function(df, name){
+  df$id = as.factor(df$id)
+  plot(df$age, df$youth_dev, type = 'n', 
+       cex.main = 1.5,
+       xlab = 'Age',
+       ylab = "Kid's Score",
+       main = paste("Join points for Person: ", name)
+  )
+  ids = unique(df$id)
+  for (j in seq_along(ids)) {
+    sub = df %>% filter(id == ids[j])
+    lines(sub$age,sub$youth_dev,col=j)
+  }
+}
+join_by_sub(cohort1_sample, name = "Cohort 1 Sample") # variable, nonlinear trend w/ increasing variance
+join_by_sub(cohort2_sample, name = "Cohort 2 Sample") # variable, nonlinear trend w/ increasing variance
+join_by_sub(cohort3_sample, name = "Cohort 3 Sample") # variable, nonlinear trend w/ increasing variance
+join_by_sub(cohort4_sample, name = "Cohort 4 Sample") # variable, nonlinear trend
+join_by_sub(cohort5_sample, name = "Cohort 5 Sample") # variable, nonlinear trend
+join_by_sub(cohort6_sample, name = "Cohort 6 Sample") # variable, nonlinear trend
+join_by_sub(cohort7_sample, name = "Cohort 7 Sample") # variable, nonlinear trend
+
+# linear regression by subject
+linear_by_sub = function(df, name){
+  df$id = as.factor(df$id)
+  plot(df$age, df$youth_dev, type = 'n', 
+       cex.main = 1.5,
+       xlab = 'Age',
+       ylab = "Kid's Score",
+       main = paste("Separate Linear Regression for Person: ", name)
+  )
+  ids = unique(df$id)
+  for (j in seq_along(ids)) {
+    sub = df %>% filter(id == ids[j])
+    fitted = fitted(lm(youth_dev~age,sub))
+    lines(sub$age,fitted,col=j)
+  }
+}
+linear_by_sub(cohort1_sample, "Cohort 1 Sample") # more negative slopes
+linear_by_sub(cohort2_sample, "Cohort 2 Sample") # variable slopes
+linear_by_sub(cohort3_sample, "Cohort 3 Sample") # more negative slopes
+linear_by_sub(cohort4_sample, "Cohort 4 Sample") # variable slopes
+linear_by_sub(cohort5_sample, "Cohort 5 Sample") # variable slopes
+linear_by_sub(cohort6_sample, "Cohort 6 Sample") # variable slopes
+linear_by_sub(cohort7_sample, "Cohort 7 Sample") # variable slopes
+
+# linear regression w/ quadratic by subject
+quad_by_sub = function(df, name){
+  df$id = as.factor(df$id)
+  plot(df$age, df$youth_dev, type = 'n', 
+       cex.main = 1.5,
+       xlab = 'Age',
+       ylab = "Kid's Score",
+       main = paste("Separate Quadratic Regression for Person: ", name)
+  )
+  ids = unique(df$id)
+  for (j in seq_along(ids)) {
+    sub = df %>% filter(id == ids[j])
+    sub$agesq = sub$age * sub$age
+    fitted = fitted(lm(youth_dev~age + agesq,sub))
+    lines(sub$age,fitted,col=j)
+  }
+}
+quad_by_sub(cohort1_sample, "Cohort 1 Sample")
+quad_by_sub(cohort2_sample, "Cohort 2 Sample")
+quad_by_sub(cohort3_sample, "Cohort 3 Sample")
+quad_by_sub(cohort4_sample, "Cohort 4 Sample")
+quad_by_sub(cohort5_sample, "Cohort 5 Sample")
+quad_by_sub(cohort6_sample, "Cohort 6 Sample")
+quad_by_sub(cohort7_sample, "Cohort 7 Sample")
+```
+
+# mean data
+```{r}
+# Mean by age
+mean_youth_dev_by_age = nyls_data2 %>%
+  group_by(age) %>%
+  summarise(mean_youth_dev = mean(youth_dev))
+par(mfrow = c(1,1))
+plot(mean_youth_dev_by_age$age, mean_youth_dev_by_age$mean_youth_dev,
+     type = 'b', lwd = 2, col = "blue",
+     main = "Overall Mean Kid's Score by Age",
+     xlab = "Age", ylab = "Score")
+# score decreases first and slightly increases at 20. steepest decrease from 13 to 14. nonlinear relationship btw score and age.
+# Mean by age by cohort
+mean_youth_dev_by_age_cohort = nyls_data2 %>%
+  group_by(age, cohort) %>%
+  summarise(mean_youth_dev = mean(youth_dev)) %>%
+  arrange(cohort)
+ggplot(data = mean_youth_dev_by_age_cohort, aes(x = age, y = mean_youth_dev, group = factor(cohort))) + geom_line(aes(colour = factor(cohort))) + geom_point(aes(color = factor(cohort))) + labs(title = "Mean Kid's Score by Age \n Separate Lines for cohorts", x = "Age", y = "Score")
+# score decreases with age more steeply for younger cohorts (cohort 1,2,3) and cohort 5. from cohort 5 on, score decreases slower and eventually levels off around 18-19. older cohorts (cohort 6,7) tend to have similar starting scores, but their ending scores are reversely ordered (cohort 6 < cohort 7).
+```
+
+## effects of gender
+```{r}
+males = nyls_data2 %>% filter(gender == 1)
+females = nyls_data2 %>% filter(gender == 2)
+sampled_ids_male = sample(unique(males$id), size = 50, replace = FALSE)
+males_sample = males %>% filter(id %in% sampled_ids_male)
+sampled_ids_female = sample(unique(females$id), size = 50, replace = FALSE)
+females_sample = females %>% filter(id %in% sampled_ids_female)
+join_by_sub(males_sample, "Male Sample")    # nonlinear trend w/ increasing variance
+linear_by_sub(males_sample, "Male Sample")  # more negative slopes
+join_by_sub(females_sample, "Female Sample")   # nonlinear trend w/ increasing variance
+linear_by_sub(females_sample, "Female Sample")  # mix of negative and positive slopes; more positive slopes than males
+# Mean by age by gender
+mean_youth_dev_by_age_gender = nyls_data2 %>%
+  group_by(age, gender) %>%
+  summarise(mean_youth_dev = mean(youth_dev))
+ggplot(data = mean_youth_dev_by_age_gender, aes(x = age, y = mean_youth_dev, group = factor(gender))) + geom_line(aes(colour = factor(gender))) + geom_point(aes(color = factor(gender))) + labs(title = "Mean Kid's Score by Age \n Separate Lines for Males and Females", x = "Age", y = "Score") + scale_color_manual(values = c("1" = "blue", "2" = "red"), labels = c("Male", "Female"))
+# males on average score lower than females at any age, and the difference in avg scores becomes larger as age increases. male scores decrease faster than female scores overall. scores start to increase for both genders after 18, earlier for females.
+```
+
+## effects of parents' attitude
+```{r}
+# group kids based on their parents' attitude score;for each group, plot kid's score by age
+xyplot(youth_dev ~ age | as.factor(parent_att), data = nyls_data2,
+col.line = "blue", type = c("p","spline"),
+main = "Plots of Kid's Score by Age: Parents' Attitude")
+# for parents' attitude score of 27-29 and 31-35, similar trend in kid's score by age; for parents' attitude score of 30 and 31, more linear trend in kid's score by age; low parents' attitude scores have variable trends, but this may be due to small sample sizes.
+```
+
+## Rsq's and metaRsq
+```{r}
+# model 1: linear
+ssmodel = c(0)
+sstotal = c(0)
+id = unique(nyls_data2$id)
+R2 = matrix(99, nrow = length(id), ncol = 2)
+for (i in 1:length(id)){
+  sub = nyls_data2 %>% filter(index == i)
+  model0 = lm(youth_dev ~ age, data = sub)
+  a = anova(model0)
+  ssmodel = ssmodel + a[1,2]
+  sstotal = sstotal + sum(a[,2])
+  R2[i,1:2] = c(i, summary(model0)$r.squared)
+}
+R2meta.mod1 = ssmodel/sstotal   # meta R^2 for model 1
+R2.mod1 = R2[,2]   # R^2 for each individual 
+R2.mod1 = as.data.frame(R2.mod1)
+ggplot(R2.mod1, aes(x = R2.mod1)) + geom_histogram(aes(y=..density..), colour = "black", fill = "white") + geom_density(alpha = 0.2, fill = "#FF6666") + geom_vline(aes(xintercept=R2meta.mod1), colour = "red", size = 1) + geom_text(aes(x = R2meta.mod1, label = "R^2_meta", y=2), colour = "black") + labs(title = expression(paste(R^2," Model 1:   ",Y[it], " = ", beta[oi], " + ", beta[li], x[lit], " + ", R[it])), x = expression(R^2))
+
+# model 2: quadratic
+ssmodel = c(0)
+sstotal = c(0)
+R2 = matrix(99, nrow = length(id), ncol = 2)
+for (i in 1:length(id)){
+  sub = nyls_data2 %>% filter(index == i)
+  sub$agesq = sub$age * sub$age
+  model1 = lm(youth_dev ~ age + agesq, data = sub)
+  a = anova(model1)
+  ssmodel = ssmodel + a[1,2] + a[2,2]
+  sstotal = sstotal + sum(a[,2])
+  R2[i,1:2] = c(i, summary(model1)$r.squared)
+}
+R2meta.mod2 = ssmodel/sstotal   # meta R^2 for model 2 (improved a lot)
+R2.mod2 = R2[,2]   # R^2 for each individual 
+R2.mod2 = as.data.frame(R2.mod2)
+ggplot(R2.mod2, aes(x = R2.mod2)) + geom_histogram(aes(y=..density..), colour = "black", fill = "white") + geom_density(alpha = 0.2, fill = "#FF6666") + geom_vline(aes(xintercept=R2meta.mod2), colour = "red", size = 1) + geom_text(aes(x = R2meta.mod2, label = "R^2_meta", y=2), colour = "black") + labs(title = expression(paste(R^2," Model 2:   ",Y[it], " = ", beta[oi], " + ", beta[li], x[lit], " + ", beta[q,i], x[qit]^2, " + " ,R[it])), x = expression(R^2))
+
+### comparison: who is improving
+Rsqs = bind_cols(R2.mod1, R2.mod2)
+Rsqs$index = 1:length(id)
+combined = nyls_data2 %>% left_join(Rsqs, by = "index")
+ggplot(combined, aes(x = R2.mod1, y = R2.mod2, group = factor(cohort))) +
+  geom_point(aes(colour = factor(cohort))) + geom_abline(slope = 1, intercept = 0, col = "black") + labs(title = "Who is better fit by quadratic term ", 
+                                                                                                       y = expression(paste(R^2," Model 2:   ",Y[it], " = ", beta[oi], " + ", beta[li], x[lit], " + ", beta[q,i], x[qit]^2, " + " ,R[it])),
+                                                                                                       x = expression(paste(R^2," Model 1:   ",Y[it], " = ", beta[oi], " + ", beta[li], x[lit], " + " ,R[it])))
+# no discernible performance differences among cohorts
+ggplot(combined, aes(x = R2.mod1, y = R2.mod2, group = factor(gender))) +
+  geom_point(aes(colour = factor(gender))) + geom_abline(slope = 1, intercept = 0, col = "black") + labs(title = "Who is better fit by quadratic term ", 
+                                                                                                       y = expression(paste(R^2," Model 2:   ",Y[it], " = ", beta[oi], " + ", beta[li], x[lit], " + ", beta[q,i], x[qit]^2, " + " ,R[it])),
+                                                                                                       x = expression(paste(R^2," Model 1:   ",Y[it], " = ", beta[oi], " + ", beta[li], x[lit], " + " ,R[it]))) + scale_color_manual(values = c("1" = "blue", "2" = "red"), labels = c("Male","Female"))
+# no discernible performance differences between genders
+```
+
+## exploring random effects
+# Compute mean squared residual from lm and fit regression to them
+# Looking at variance functions by looking at
+#  (mean) squared residuals
+```{r}
+nyls_data2$gender = as.factor(nyls_data2$gender)
+nyls_data2$cohort = as.factor(nyls_data2$cohort)
+nyls_data2$agesq = nyls_data2$age**2
+ols = lm(youth_dev ~ 1 + age + agesq + gender + cohort + parent_att +
+           age*gender + age*cohort, data = nyls_data2)
+summary(ols)
+nyls_data2$res.sq = residuals(ols)*residuals(ols)
+mres_cohort = nyls_data2 %>%
+  group_by(age, cohort) %>%
+  summarise(mean_res.sq = mean(res.sq))
+p1 = ggplot(mres_cohort, aes(x=age, y=mean_res.sq, group = cohort)) + geom_line(aes(colour = cohort)) + labs(title = "Data", x = "Age", y = "Mean Squared Residuals")
+
+lin_fitted = matrix(0, nrow = 7, ncol = 4)
+for (i in 1:7){
+  mod = lm(mean_res.sq ~ age, data = mres_cohort %>% filter(cohort == i))
+  lin_fitted[i,] = fitted(mod) 
+}
+lin_fitted = as.data.frame(lin_fitted)
+colnames(lin_fitted) = c("age1","age2","age3","age4")
+lin_fitted = lin_fitted %>%
+  pivot_longer(cols = age1:age4, names_to = "age", values_to = "fitted.lin")
+mres_cohort = mres_cohort %>% arrange(cohort)
+mres_cohort$fitted_lin = lin_fitted$fitted.lin
+p2 = ggplot(mres_cohort, aes(x=age, y=fitted_lin, group = cohort)) + geom_line(aes(colour = cohort)) + labs(title = "Fit using Linear Regression", x = "Age", y = "Mean Squared Residuals")
+
+quad_fitted = matrix(0, nrow = 7, ncol = 4)
+for (i in 1:7){
+  mres_cohort$age2 = mres_cohort$age*mres_cohort$age
+  mod = lm(mean_res.sq ~ age + age2, data = mres_cohort %>% filter(cohort == i))
+  quad_fitted[i,] = fitted(mod)
+}
+quad_fitted = as.data.frame(quad_fitted)
+quad_fitted = quad_fitted %>%
+  pivot_longer(cols = V1:V4, names_to = "age", values_to = "fitted.quad")
+mres_cohort$fitted_quad = quad_fitted$fitted.quad
+p3 = ggplot(mres_cohort, aes(x=age, y=fitted_quad, group = cohort)) + geom_line(aes(colour = cohort)) + labs(title = "Quadratic", x = "Age", y = "Mean Squared Residuals")
+
+cubic_fitted = matrix(0, nrow = 7, ncol = 4)
+for (i in 1:7){
+  mres_cohort$age3 = mres_cohort$age2*mres_cohort$age
+  mod = lm(mean_res.sq ~ age + age2 + age3, data = mres_cohort %>% filter(cohort == i))
+  cubic_fitted[i,] = fitted(mod)
+}
+cubic_fitted = as.data.frame(cubic_fitted)
+cubic_fitted = cubic_fitted %>%
+  pivot_longer(cols = V1:V4, names_to = "age", values_to = "fitted.cubic")
+mres_cohort$fitted_cubic = cubic_fitted$fitted.cubic
+p4 = ggplot(mres_cohort, aes(x=age, y=fitted_cubic, group = cohort)) + geom_line(aes(colour = cohort)) + labs(title = "Cubic", x = "Age", y = "Mean Squared Residuals")
+
+ggarrange(p1,p2,p3,p4, ncol = 2, nrow = 2)  # cubic fit is a perfect fit (since there are only 4 observations per cohort)
+```
+
+# looking at serial correlation
+```{r}
+create_cor_tab = function(i){
+  data = nyls_data2 %>% filter(cohort == i) %>% select(id, age, youth_dev) %>% pivot_wider(names_from = age, names_prefix = "age_", values_from = youth_dev)
+  ctab = cor(data[,-1], use = "pairwise.complete.obs")
+  ctab
+}
+nyls_data3 = nyls_data2 %>% select(id, age, youth_dev) %>% arrange(age) %>%
+  pivot_wider(names_from = age, names_prefix = "age_", values_from = youth_dev)
+ctab_all = cor(nyls_data3[,-1], use = "pairwise.complete.obs")
+corrplot(ctab_all, method = "number")
+
+cohort1_ctab = create_cor_tab(i = 1)
+#kable(cohort1_ctab, caption = "Residual Correlation Matrix for Cohort 1 ")
+cohort2_ctab = create_cor_tab(i = 2)
+cohort3_ctab = create_cor_tab(i = 3)
+cohort4_ctab = create_cor_tab(i = 4)
+cohort5_ctab = create_cor_tab(i = 5)
+cohort6_ctab = create_cor_tab(i = 6)
+cohort7_ctab = create_cor_tab(i = 7)
+
+par(mfrow = c(2,4))
+corrplot(cohort1_ctab, method = "number")
+corrplot(cohort2_ctab, method = "number")
+corrplot(cohort3_ctab, method = "number")
+corrplot(cohort4_ctab, method = "number")
+corrplot(cohort5_ctab, method = "number")
+corrplot(cohort6_ctab, method = "number")
+corrplot(cohort7_ctab, method = "number")
+```
+
+### Modeling
+## No serial correlation
+```{r}
+# Null/empty Model w/ random intercept 
+mod0 = lmer(youth_dev ~ 1 + (1 | id), data = nyls_data2, REML=FALSE, control = lmerControl(optimizer ="Nelder_Mead"))
+summary(mod0)
+icc(mod0)
+
+# main effects of age, age^2, gender, cohort, and parent_att w/ random intercept
+mod1 = lmer(youth_dev ~ 1 + age + agesq + gender + cohort + parent_att + (1 | id), data = nyls_data2, REML=FALSE, control = lmerControl(optimizer = "Nelder_Mead"))
+summary(mod1)
+icc(mod1)
+
+# add cross-level interaction effects for age*gender and age*cohort
+mod2 = lmer(youth_dev ~ 1 + age + agesq + gender + cohort + parent_att +
+              age*gender + age*cohort + (1 | id), data = nyls_data2, REML=FALSE, control = lmerControl(optimizer = "Nelder_Mead"))
+summary(mod2)
+icc(mod2)
+
+# add random slope for age
+mod3 = lmer(youth_dev ~ 1 + age + agesq + gender + cohort + parent_att +
+              age*gender + age*cohort + (1 + age | id), data = nyls_data2, REML=FALSE, control = lmerControl(optimizer = "Nelder_Mead"))
+
+# check if lack of convergence is OK to ignore
+relgrad = with(mod3@optinfo$derivs,solve(Hessian,gradient))
+max(abs(relgrad)) #<0.001. OK
+summary(mod3)
+
+# add random slope for age^2
+mod4 = lmer(youth_dev ~ 1 + age + agesq + gender + cohort + parent_att +
+              age*gender + age*cohort + (1 + age + agesq| id), data = nyls_data2, REML=FALSE, control = lmerControl(optimizer = "Nelder_Mead"))
+# rescale age^2
+nyls_data2$xagesq = nyls_data2$agesq/sd(nyls_data2$agesq)
+sd(nyls_data2$xagesq)
+mod4_rescaled = lmer(youth_dev ~ 1 + age + xagesq + gender + cohort + parent_att +
+              age*gender + age*cohort + (1 + age + xagesq| id), data = nyls_data2, REML=FALSE, control = lmerControl(optimizer = "Nelder_Mead"))
+# check if lack of convergence is OK
+relgrad = with(mod4_rescaled@optinfo$derivs,solve(Hessian,gradient))
+max(abs(relgrad)) # <0.001.OK
+summary(mod4_rescaled)
+
+htmlreg(list(mod0, mod1, mod2, mod3, mod4_rescaled),
+        custom.model.names = c("Null", "All Main Effects", "+ Some Cross Effects", "+ Random Effect for Age", "+ Random Effect for Age^2"), single.row = TRUE, file = "model0-model4.doc")  # model 4 is the preliminary HLM
+
+
+# model reduction: random effects
+# test whether need random slope for age^2 in preliminary model
+lr = deviance(mod3) - deviance(mod4_rescaled)
+df0 = 2  #random intercept and 1 random slope
+df1 = 3  #random intercept and 2 random slopes
+p1 = pchisq(lr, df1, lower.tail = FALSE)
+p0 = pchisq(lr, df0, lower.tail = FALSE)
+pvalue = 0.5*(p1+p0)
+pvalue    # reject null. need random slope for age^2
+
+# model reduction: fixed effects
+# robust estimation for standard errors of fixed effects
+robust_table = 
+round(robust(mod4_rescaled, nyls_data2$youth_dev, nyls_data2$id, "between/within"),digits = 4)   #same conclusion as model-based estimation for each fixed effect
+write.csv(robust_table, "robust_se.csv")
+robust_table2 =
+round(robust(mod4_rescaled, nyls_data2$youth_dev, nyls_data2$id, "satterthwaite"),digits = 4)  
+write.csv(robust_table2, "robust_se_2.csv")
+#same conclusion as model-based estimation for each fixed effect. t-tests indicate don't need fixed effects for cohorts or cross-level interaction between age and cohort; maybe don't need fixed effect of gender.
+# contrast test for whether need main effects and cross-level interaction effects involving cohort: 
+# test cohort2 = cohort3 = cohort4 = cohort5 = cohort6 = cohort7 = 0 and all interactions involving cohort = 0 
+L = matrix(0, nrow=12, ncol=18)
+for (i in 1:6){
+  L[i,i+4] = 1
+  L[i+6,i+12] =1
+}
+contrast(mod4_rescaled, L)  # retain null. remove effects for cohort.
+
+mod5 = lmer(youth_dev ~ 1 + age + xagesq + gender + parent_att +
+              age*gender + (1 + age + xagesq| id), data = nyls_data2, REML=FALSE,
+            control = lmerControl(optimizer = "nlminbwrap"))
+relgrad = with(mod5@optinfo$derivs,solve(Hessian,gradient))
+max(abs(relgrad)) #<0.001. OK.
+summary(mod5)
+# likelihood ratio test for effects for cohort
+anova(mod5, mod4_rescaled)  # support for removing effects for cohort.
+# compare global fit measures of mod5 with mod4_rescaled
+bic.hlm(mod4_rescaled, cluster.id = nyls_data2$id)
+bic.hlm(mod5, cluster.id = nyls_data2$id)   # the reduced model is better in terms of every measure. use mod5 as the final model
+bic.hlm(mod0, cluster.id = nyls_data2$id)
+
+htmlreg(list(mod4_rescaled, mod5),
+        custom.model.names = c("Preliminary", "No Cohort"), single.row = TRUE,
+        file = "mod4-mod5.doc")
+htmlreg(list(mod5), custom.model.names = "No Cohort", single.row = TRUE, file = "mod5.doc")
+```
+
+## With Serial Correlation
+```{r}
+# built on the final model we chose above
+# empty/null model w/o serial correlation: mod0
+nlme0 = lme(youth_dev ~ 1, random = ~1 |id, data = nyls_data2)
+summary(nlme0)
+# more fixed effects w/o serial correlation
+nlme1 = lme(youth_dev ~ 1 + age + xagesq + gender + parent_att + gender*age, 
+              random = ~ 1|id, data = nyls_data2)
+summary(nlme1)
+# AR(1) w/ random intercept and slope
+nlme2 = lme(youth_dev ~ 1 + age + xagesq + gender + parent_att + gender*age,
+            random = ~ 1 + age + xagesq | id,
+            correlation = corAR1(form = ~ 1 + age | id),
+            data = nyls_data2, control = lmeControl(msMaxIter = 1000, msMaxEval = 1000))
+# error: system is computationally singular. drop random slope for agesq
+nlme2 = lme(youth_dev ~ 1 + age + xagesq + gender + parent_att + gender*age,
+            random = ~ 1 + age | id,
+            correlation = corAR1(form = ~ 1 + age | id),
+            data = nyls_data2, control = lmeControl(msMaxIter = 1000, msMaxEval = 1000))
+# nlminb problem, convergence error code = 1
+# message = singular convergence (7)
+# drop random slope for age (AR(1) w/ random intercept only)
+nlme2 = lme(youth_dev ~ 1 + age + xagesq + gender + parent_att + gender*age,
+            random = ~ 1 | id,
+            correlation = corAR1(form = ~ 1 + age | id),
+            data = nyls_data2, control = lmeControl(msMaxIter = 1000, msMaxEval = 1000))
+summary(nlme2)
+screenreg(list(mod5, nlme2))    # AIC, BIC worse than mod5
+
+# MA(1) w/ random intercept only
+nlme3 = lme(youth_dev ~ 1 + age + xagesq + gender + parent_att + gender*age,
+            random = ~ 1 | id,
+            correlation = corARMA(form = ~ 1 + age | id, p = 0, q = 1),
+            data = nyls_data2, control = lmeControl(msMaxIter = 1000, msMaxEval = 1000))
+summary(nlme3)
+screenreg(list(mod5,nlme2, nlme3))  #AIC, BIC worse than AR(1) w/ random intercept
+
+# ARMA(1,1) w/ random intercept only
+nlme4 = lme(youth_dev ~ 1 + age + xagesq + gender + parent_att + gender*age,
+            random = ~ 1 | id,
+            correlation = corARMA(form = ~ 1 + age | id, p = 1, q = 1),
+            data = nyls_data2, control = lmeControl(msMaxIter = 1000, msMaxEval = 1000))
+summary(nlme4)
+screenreg(list(mod5,nlme2, nlme3, nlme4)) #best AIC,BIC among models w/ serial correlation; but still worse than mod5
+
+# drop fixed and random effects for agesq and add AR(1) w/ random intercept and slope for age
+nlme5 = lme(youth_dev ~ 1 + age + gender + parent_att + gender*age,
+            random = ~ 1 + age | id,
+            correlation = corAR1(form = ~ 1 + age | id),
+            data = nyls_data2, control = lmeControl(msMaxIter = 1000, msMaxEval = 1000))
+summary(nlme5)
+screenreg(list(mod5,nlme2, nlme3, nlme4,nlme5))
+
+# drop random intercept
+nlme6 = lme(youth_dev ~ 1 + age + gender + parent_att + gender*age,
+            random = ~ -1 + age | id,
+            correlation = corAR1(form = ~ 1 + age | id),
+            data = nyls_data2, control = lmeControl(msMaxIter = 1000, msMaxEval = 1000))
+anova(nlme6, nlme5)
+lr = 6.101145
+p1 = 1-pchisq(lr, df = 2)
+p2 = 1-pchisq(lr, df = 1)
+pvalue = 0.5*(p1+p2)
+pvalue     # reject null. keep random intercept. 
+screenreg(list(nlme2, nlme3, nlme4,nlme5))
+htmlreg(list(mod0, mod5, nlme2, nlme3, nlme4, nlme5, nlme6), 
+        custom.model.names = c("Null", "Model 5", "AR1 w/ U_0i", "MA1 w/ U_0i", "ARMA(1,1) w/ U_0i", "AR1 w/ U_0i and U1_i", "AR1 w/ U_1i"),
+        single.row = TRUE, file = "serial_corr mods.doc"
+        )
+
+intervals(nlme6, method = profile) # altho fixed effect of gender appears to be non-significant, it is significant for cross effect with age; so don't drop it
+
+###############################################################
+# Final Model: random intercept only, ARMA(1)                 #
+###############################################################
+# get model-based COV and CORR matrices for Y
+tau0sq = 2.239857**2
+z = matrix(1, nrow = 4, ncol = 4)
+between = tau0sq*z
+
+rho = 0.7084814
+theta = -0.3294492
+sigmasq = nlme4$sigma**2
+omega = diag(4)*(1+theta**2-2*rho*theta)
+for(i in 1:3){
+  for(j in (i+1):4){
+    power = j-i-1
+    omega[i,j] = (1-rho*theta)*(rho-theta)*(rho**power)
+    omega[j,i] = omega[i,j]
+  }
+}
+within = sigmasq/(1-rho**2)*omega
+covY = between + within
+write.csv(covY, "COV_ARMA(1,1).csv")
+
+isd = solve(diag(sqrt(diag(covY)))) 
+Ry = isd %*% covY %*% isd
+write.csv(Ry, "CORR_ARMA(1,1).csv")
+```
+
+Based on global fit measures, I chose to use model 5 as my final model.
+
+## model diagnostics
+# level 1 residual plots
+```{r}
+res_level1 = resid(mod5)
+fit = predict(mod5)   # conditional fitted values
+par(mfrow = c(2,2))
+plot(fit, res_level1, 
+     xlab='Conditional Fitted Values',
+     ylab='Standardized Pearson Residuals',
+     main='Conditional Residuals')
+
+qqnorm(res_level1)
+qqline(res_level1, col = "blue")
+
+h = hist(res_level1, breaks = 20)
+xfit = seq(min(res_level1), max(res_level1), length=50)
+yfit = dnorm(xfit, mean=mean(res_level1), sd=sd(res_level1))
+yfit = yfit*diff(h$mids[1:2])*length(res_level1) # use mid-points 
+lines(xfit, yfit, col='blue', lwd=2)
+
+plot.new()
+text(0.5, 0.8, "Model 5")
+text(0.5,0.5, 'Deviance=30186')
+text(0.5,0.2, 'AIC=30212')
+```
+
+# qq plots for U0j, U1j, and U2j
+```{r}
+ranU = as.data.frame(ranef(mod5))
+U0j = ranU[which(ranU$term=="(Intercept)"),]
+U1j = ranU[which(ranU$term=="age"),]
+U2j = ranU[which(ranU$term=="xagesq"),]
+U0j = U0j[order(U0j$condval),]
+U1j = U1j[order(U1j$condval),]
+U2j = U2j[order(U2j$condval),]
+U0j$grp = seq(1:1424)
+U1j$grp = seq(1:1424)
+U2j$grp = seq(1:1424)
+# qq plot for U0j
+par(mfrow=c(1,1))
+qqdata = qqnorm(U0j$condval)
+plot(qqdata$x,qqdata$y,type="p",pch=19,col="red",
+main="Normal QQ plot of U0j with 95% Confidence Bands",
+     xlab="Theoretical Value",
+     ylab="Estimated U0j")
+arrows(qqdata$x, qqdata$y - 1.96*U0j$condsd, 
+       qqdata$x, qqdata$y + 1.96*U0j$condsd, 
+       length = 0.00, col = rgb(0, 0, 1, 0.2))
+qqline(U0j$condval,col="yellow")
+# for U1j
+qqdata = qqnorm(U1j$condval)
+plot(qqdata$x,qqdata$y,type="p",pch=19,col="red",
+main="Normal QQ plot of Uuj with 95% Confidence Bands",
+     xlab="Theoretical Value",
+      ylab="Estimated U1j")
+arrows(qqdata$x, qqdata$y - 1.96*U1j$condsd, 
+       qqdata$x, qqdata$y + 1.96*U1j$condsd, 
+	length=0.00, col = rgb(0, 0, 1, 0.2))
+qqline(U1j$condval,col="yellow")
+# for U2j
+qqdata = qqnorm(U2j$condval)
+plot(qqdata$x,qqdata$y,type="p",pch=19,col="red",
+main="Normal QQ plot of Uuj with 95% Confidence Bands",
+     xlab="Theoretical Value",
+      ylab="Estimated U2j")
+arrows(qqdata$x, qqdata$y - 1.96*U2j$condsd, 
+       qqdata$x, qqdata$y + 1.96*U2j$condsd, 
+	length=0.00, col = rgb(0, 0, 1, 0.2))
+qqline(U2j$condval,col="yellow")
+```
+
+# level 2 residual plots
+```{r}
+res_final = hlm_resid(mod5, level = 'id', type = 'EB', standardize = TRUE,
+          include.ls = FALSE)
+head(res_final)
+
+par(mfrow = c(1,3))
+# histograms of level 2 residuals
+# U0_i
+h1 = hist(res_final$.std.ranef.intercept, breaks = 20, main = "Histogram of U0_j", xlab = "U0_j")
+xfit <- seq(min(res_final$.std.ranef.intercept), max(res_final$.std.ranef.intercept), length=50)
+yfit <- dnorm(xfit, mean=mean(res_final$.std.ranef.intercept), sd=sd(res_final$.std.ranef.intercept))
+yfit <- yfit*diff(h1$mids[1:2])*length(res_final$id) # use mid-points 
+lines(xfit, yfit, col='blue', lwd=2)             # draws normal
+
+# U1_i
+h2 = hist(res_final$.std.ranef.age, breaks = 20, main = "Histogram of U1_j", xlab = "U1_j")
+xfit <- seq(min(res_final$.std.ranef.age), max(res_final$.std.ranef.age), length=50)
+yfit <- dnorm(xfit, mean=mean(res_final$.std.ranef.age), sd=sd(res_final$.std.ranef.age))
+yfit <- yfit*diff(h2$mids[1:2])*length(res_final$id) # use mid-points 
+lines(xfit, yfit, col='blue', lwd=2)             # draws normal
+
+# U2_i
+h3 = hist(res_final$.std.ranef.xagesq, breaks = 20, main = "Histogram of U2_j", xlab = "U2_j")
+xfit <- seq(min(res_final$.std.ranef.xagesq), max(res_final$.std.ranef.xagesq), length=50)
+yfit <- dnorm(xfit, mean=mean(res_final$.std.ranef.xagesq), sd=sd(res_final$.std.ranef.xagesq))
+yfit <- yfit*diff(h3$mids[1:2])*length(res_final$id) # use mid-points 
+lines(xfit, yfit, col='blue', lwd=2)             # draws normal
+```
+
